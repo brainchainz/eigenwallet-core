@@ -48,3 +48,6 @@ jobs:
           platforms: linux/amd64
           push: true
           tags: ghcr.io/brainchainz/asb:${{ github.event.inputs.tag }}
+          # Registry layer cache so future rebuilds skip the Monero/Rust compile
+          cache-from: type=registry,ref=ghcr.io/brainchainz/asb:buildcache
+          cache-to: type=registry,ref=ghcr.io/brainchainz/asb:buildcache,mode=max
