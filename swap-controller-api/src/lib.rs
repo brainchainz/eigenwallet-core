@@ -17,6 +17,9 @@ pub struct BitcoinSeedResponse {
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct MoneroBalanceResponse {
     pub balance: u64,
+    /// Unlocked (spendable) balance in piconero; total - unlocked is pending.
+    #[serde(default)]
+    pub unlocked: u64,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
