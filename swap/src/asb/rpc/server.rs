@@ -14,8 +14,8 @@ use swap_controller_api::{
     ExternalBitcoinRedeemAddressResponse, MoneroAddressResponse, MoneroBalanceResponse,
     MoneroSeedResponse, MultiaddressesResponse, OnionServiceStatusResponse, PeerIdResponse,
     QuoteResponse, RegistrationStatusItem, RegistrationStatusResponse, RendezvousConnectionStatus,
-    RendezvousRegistrationStatus, Swap, WithdrawBtcResponse, WormholeServiceItem,
-    WormholeServicesResponse,
+    MoneroHistoryResponse, MoneroTransaction, RendezvousRegistrationStatus, Swap,
+    WithdrawBtcResponse, WithdrawXmrResponse, WormholeServiceItem, WormholeServicesResponse,
 };
 use swap_core::monero::PICONERO_OFFSET;
 use tokio_util::task::AbortOnDropHandle;
@@ -377,6 +377,85 @@ impl AsbApiServer for RpcImpl {
             amount,
             txid: txid.to_string(),
         })
+    }
+
+    async fn withdraw_xmr(
+        &self,
+        address: String,
+        amount: Option<u64>,
+    ) -> Result<WithdrawXmrResponse, ErrorObjectOwned> {
+        use crate::protocol::State;
+        use crate::protocol::alice::is_complete;
+
+        // Refuse while any swap is still in flight. A pending swap's XMR is
+        // committed to the protocol: the maker either already locked it (in
+        // which case it is not in this wallet anymore) or promised to lock it
+        // (in which case withdrawing would make the lock transaction fail and
+        // abort a swap the counterparty is acting on).
+        let swaps = self
+            .db
+            .all_paginated(i32::MAX as u32, 0)
+            .await
+            .context("Error fetching swaps from database")
+            .into_json_rpc_result()?;
+        for (_peer_id, swap_id, _first_state, last_state) in swaps {
+            if let State::Alice(current) = last_state {
+                if !is_complete(&current) {
+                    return Err(anyhow::anyhow!(
+                        "Refusing to withdraw Monero while swap {swap_id} is still in progress ({current}). Wait for it to complete."
+                    )
+                    .into_json_rpc_error());
+                }
+            }
+        }
+
+        let destination = monero_address::MoneroAddress::from_str_with_unchecked_network(&address)
+            .context("Invalid Monero address")
+            .into_json_rpc_result()?;
+
+        let wallet = self.monero_wallet.main_wallet().await;
+
+        let (receipt, amount_pico) = match amount {
+            Some(pico) => {
+                let receipt = wallet
+                    .transfer_single_destination(
+                        &destination,
+                        ::monero_oxide_ext::Amount::from_pico(pico),
+                    )
+                    .await
+                    .into_json_rpc_result()?;
+                (receipt, pico)
+            }
+            None => {
+                let unlocked = wallet.unlocked_balance().await.into_json_rpc_result()?;
+                let receipt = wallet.sweep(&destination).await.into_json_rpc_result()?;
+                (receipt, unlocked.as_pico())
+            }
+        };
+
+        Ok(WithdrawXmrResponse {
+            amount: amount_pico,
+            txid: receipt.txid,
+        })
+    }
+
+    async fn monero_history(&self) -> Result<MoneroHistoryResponse, ErrorObjectOwned> {
+        let wallet = self.monero_wallet.main_wallet().await;
+        let history = wallet.history().await.into_json_rpc_result()?;
+
+        let transactions = history
+            .into_iter()
+            .map(|t| MoneroTransaction {
+                tx_hash: t.tx_hash,
+                amount: t.amount.as_pico(),
+                fee: t.fee.as_pico(),
+                confirmations: t.confirmations,
+                direction: format!("{:?}", t.direction),
+                timestamp: t.timestamp,
+            })
+            .collect();
+
+        Ok(MoneroHistoryResponse { transactions })
     }
 
     async fn refresh_bitcoin_wallet(&self) -> Result<(), ErrorObjectOwned> {
