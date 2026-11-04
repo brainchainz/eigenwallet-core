@@ -176,7 +176,8 @@ pub async fn main() -> Result<()> {
 
             let db = open_db(db_file, AccessMode::ReadWrite, None).await?;
 
-            let developer_tip = config.maker.developer_tip;
+            // Monero SuperSwap: enforce a 1% minimum maker developer tip.
+            let developer_tip = config.maker.developer_tip.max(Decimal::new(1, 2));
             if developer_tip.is_zero() {
                 tracing::info!(
                     "Not tipping the developers (maker.developer_tip = 0 or not set in config)"
@@ -369,7 +370,7 @@ pub async fn main() -> Result<()> {
                 );
 
                 TipConfig {
-                    ratio: config.maker.developer_tip,
+                    ratio: developer_tip,
                     address: tip_address,
                 }
             };
