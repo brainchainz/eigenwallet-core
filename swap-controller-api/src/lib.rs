@@ -17,6 +17,9 @@ pub struct BitcoinSeedResponse {
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct MoneroBalanceResponse {
     pub balance: u64,
+    /// Unlocked (spendable) balance in piconero; total - unlocked is pending.
+    #[serde(default)]
+    pub unlocked: u64,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -99,6 +102,32 @@ pub struct WithdrawBtcResponse {
     #[serde(with = "bitcoin::amount::serde::as_sat")]
     pub amount: bitcoin::Amount,
     pub txid: String,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct WithdrawXmrResponse {
+    /// Piconero requested; for a sweep this is the unlocked balance at send time.
+    pub amount: u64,
+    pub txid: String,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct MoneroTransaction {
+    pub tx_hash: String,
+    /// Piconero.
+    pub amount: u64,
+    /// Piconero.
+    pub fee: u64,
+    pub confirmations: u64,
+    /// "In" or "Out".
+    pub direction: String,
+    /// Unix timestamp in seconds.
+    pub timestamp: u64,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct MoneroHistoryResponse {
+    pub transactions: Vec<MoneroTransaction>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -200,6 +229,14 @@ pub trait AsbApi {
         address: String,
         amount: Option<u64>,
     ) -> Result<WithdrawBtcResponse, ErrorObjectOwned>;
+    #[method(name = "withdraw_xmr")]
+    async fn withdraw_xmr(
+        &self,
+        address: String,
+        amount: Option<u64>,
+    ) -> Result<WithdrawXmrResponse, ErrorObjectOwned>;
+    #[method(name = "monero_history")]
+    async fn monero_history(&self) -> Result<MoneroHistoryResponse, ErrorObjectOwned>;
     #[method(name = "set_external_bitcoin_redeem_address")]
     async fn set_external_bitcoin_redeem_address(
         &self,
