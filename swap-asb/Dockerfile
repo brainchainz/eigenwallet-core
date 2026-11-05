@@ -42,9 +42,11 @@ COPY rust-toolchain.toml /tmp/rust-toolchain.toml
 RUN set -eu; \
     RUST_VERSION=$(awk -F\" '/^[[:space:]]*channel[[:space:]]*=/ {print $2; exit}' /tmp/rust-toolchain.toml); \
     echo "Using Rust $RUST_VERSION"; \
-    curl -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain "$RUST_VERSION" --profile complete
+    curl -sSf --retry 5 --retry-delay 3 --retry-all-errors https://sh.rustup.rs | sh -s -- -y --default-toolchain "$RUST_VERSION" --profile complete
 
 ENV PATH="/root/.cargo/bin:${PATH}"
+# Resilience for flaky networks during crates.io fetches
+ENV CARGO_NET_RETRY=10 CARGO_HTTP_TIMEOUT=120
 
 # We use cargo-chef to cache our dependency graph (recipe.json)
 RUN cargo install cargo-chef --locked
